@@ -107,6 +107,38 @@ Copy `config.sample.json` to `config.json` and complete.
 
 `apiMethod` - By default this is set to 'rtt' to use the Real Time Trains API, to chnage to the transport api set this to 'transport' 
 
+### Reliability Settings (optional)
+
+`retryBackoffSeconds` - if a refresh fails (network blip, API error), the display keeps showing the last good data and retries after these delays in turn, e.g. `[10, 30, 60]` retries after 10s, then 30s, then 60s. Once the list is exhausted it falls back to trying again every `refreshTime` seconds. Defaults to `[10, 30, 60]` if omitted.
+
+`staleAfterSeconds` - if no refresh has succeeded for this long, a small `!` is shown next to the clock so you can tell the board is showing old data rather than live times. Defaults to `refreshTime * 2` if omitted.
+
+### Display Settings (optional)
+
+`display.dimming` - dims the panel outside of your chosen hours (useful for a bedroom/hallway install), independently of `operatingHours`.
+
+```javascript
+"display": {
+  "dimming": {
+    "enabled": false,
+    "startHour": 22,
+    "endHour": 6,
+    "brightness": 10,
+    "normalBrightness": 255
+  }
+}
+```
+
+`enabled` - turn the dimming schedule on/off.
+
+`startHour` / `endHour` - the hour range (0-23) during which the panel is dimmed; wraps midnight, so `22` to `6` dims overnight.
+
+`brightness` - contrast level (0-255) to use during the dim window.
+
+`normalBrightness` - contrast level (0-255) to use outside the dim window, defaults to `255`.
+
+Not every display backend supports hardware contrast control (e.g. the desktop emulator); on those, dimming is silently a no-op.
+
 ## Running
 
 There is an example run.sh script in the root directory that will start the application and attempt to talk to a SSD1322 display via SPI. 
