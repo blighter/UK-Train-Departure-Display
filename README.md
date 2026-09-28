@@ -275,6 +275,30 @@ Set to `"rtt"` (the default) to use Real Time Trains, or `"transport"` to fall b
 
 Not every display backend supports hardware contrast control (e.g. the desktop emulator) — on those, dimming is silently a no-op.
 
+`display.splash` shows a one-off startup screen — credit, a link back to this repo, and a QR code for it — before the board starts fetching departures. It's on by default; set `enabled` to `false` to skip it:
+
+```javascript
+"display": {
+  "splash": {
+    "enabled": true,
+    "durationSeconds": 5,
+    "message": "Created by blighter",
+    "url": "https://github.com/blighter/UK-Train-Departure-Display",
+    "showQrCode": true
+  }
+}
+```
+
+| Key | Description |
+|---|---|
+| `enabled` | Shows the splash screen on startup. Defaults to `true`. |
+| `durationSeconds` | How long the splash screen stays up before the board moves on to departures. Defaults to `5`. |
+| `message` | The headline text. Defaults to `"Created by blighter"`. |
+| `url` | The link shown as text and, if `showQrCode` is on, encoded as a QR code. |
+| `showQrCode` | Draws a QR code for `url` next to the text. Defaults to `true`. |
+
+The panel is only 64px tall, so the QR code is small (real-world size depends on your panel's physical dimensions) — get the phone camera close. If a longer/custom `url` needs a QR code too big to fit, the splash screen quietly falls back to text-only rather than show a cropped, unscannable one.
+
 </details>
 
 <details>

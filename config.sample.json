@@ -27,6 +27,13 @@
         "endHour": 6,
         "brightness": 10,
         "normalBrightness": 255
+      },
+      "splash": {
+        "enabled": true,
+        "durationSeconds": 5,
+        "message": "Created by blighter",
+        "url": "https://github.com/blighter/UK-Train-Departure-Display",
+        "showQrCode": true
       }
     }
 }

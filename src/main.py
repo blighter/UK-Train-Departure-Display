@@ -3,9 +3,10 @@ import sys
 import time
 import json
 import requests
+import qrcode
 
 from datetime import datetime
-from PIL import ImageFont, Image
+from PIL import ImageFont, ImageDraw, Image
 from helpers import get_device
 from trains import loadDeparturesForStation, loadDestinationsForDeparture, loadDeparturesForStationRTT, loadDestinationsForDepartureRTT
 from luma.core.error import Error as DeviceError
@@ -101,6 +102,14 @@ def validateConfig(config):
                 raise ValueError(
                     f"config.json 'display.dimming.{key}' must be between 0 and 255")
 
+    splash = config.get('display', {}).get('splash')
+    if splash:
+        durationSeconds = splash.get('durationSeconds')
+        if durationSeconds is not None:
+            if not isinstance(durationSeconds, (int, float)) or isinstance(durationSeconds, bool) or durationSeconds <= 0:
+                raise ValueError(
+                    "config.json 'display.splash.durationSeconds' must be a positive number of seconds")
+
 def textsize(draw, text, font):
     # Pillow >=10 removed ImageDraw.textsize(); textbbox is the replacement.
     left, top, right, bottom = draw.textbbox((0, 0), text, font=font)
@@ -122,6 +131,25 @@ def getDimmingConfig(config):
     if not dimming or not dimming.get('enabled'):
         return None
     return dimming
+
+
+# Shown once at startup (see drawSplashScreen) - on by default so the
+# feature isn't invisible to configs predating it; add
+# display.splash.enabled: false to config.json to turn it off.
+DEFAULT_SPLASH_CONFIG = {
+    'enabled': True,
+    'durationSeconds': 5,
+    'message': 'Created by blighter',
+    'url': 'https://github.com/blighter/UK-Train-Departure-Display',
+    'showQrCode': True,
+}
+
+
+def getSplashConfig(config):
+    splash = {**DEFAULT_SPLASH_CONFIG, **config.get('display', {}).get('splash', {})}
+    if not splash.get('enabled'):
+        return None
+    return splash
 
 
 def setContrast(device, level):
@@ -276,6 +304,75 @@ def fetchData(config):
         return loadDataRTT(config["rttApi"], config["journey"])
     return loadData(config["transportApi"], config["journey"])
 
+def wrapText(draw, text, font, maxWidth):
+    # Character-by-character rather than word-wrapping - the splash screen's
+    # longest text is a URL, which has no spaces to break on anyway.
+    lines = []
+    current = ""
+    for ch in text:
+        candidate = current + ch
+        if current and textsize(draw, candidate, font)[0] > maxWidth:
+            lines.append(current)
+            current = ch
+        else:
+            current = candidate
+    if current:
+        lines.append(current)
+    return lines
+
+
+def buildQrImage(url):
+    # box_size=1 (one pixel per module) is as crisp as this gets - the
+    # panel is only 64px tall, so there's no headroom to draw modules any
+    # bigger once the url needs more than a handful of QR versions.
+    #
+    # Dark modules on a lit background (not the reverse) - most scanners,
+    # including zbar, don't recognise a light-on-dark ("inverted") code, so
+    # this has to be a bright yellow square with black modules rather than
+    # yellow modules on the display's usual black background.
+    qr = qrcode.QRCode(border=1, box_size=1, error_correction=qrcode.constants.ERROR_CORRECT_L)
+    qr.add_data(url)
+    qr.make(fit=True)
+    return qr.make_image(fill_color="black", back_color="yellow")
+
+
+def drawSplashScreen(device, width, height, splashConfig):
+    message = splashConfig.get('message') or "Created by blighter"
+    url = splashConfig.get('url')
+    showQrCode = bool(splashConfig.get('showQrCode') and url)
+
+    image = Image.new(device.mode, (width, height), "black")
+    draw = ImageDraw.Draw(image)
+
+    textX = 4
+    if showQrCode:
+        qrImage = buildQrImage(url)
+        qrSize = qrImage.size[0]
+        if qrSize <= height - 4:
+            image.paste(qrImage.convert(device.mode), (4, (height - qrSize) // 2))
+            textX = 4 + qrSize + 8
+        # else: a longer/custom url needed a QR version too big for this
+        # display's 64px height - fall back to text-only rather than show a
+        # code cropped down to something unscannable.
+
+    maxTextWidth = width - textX - 2
+    y = 4
+
+    for line in wrapText(draw, message, fontBold, maxTextWidth):
+        draw.text((textX, y), text=line, font=fontBold, fill="yellow")
+        y += 12
+
+    if url:
+        y += 3
+        for line in wrapText(draw, url, font, maxTextWidth):
+            if y > height - 10:
+                break
+            draw.text((textX, y), text=line, font=font, fill="yellow")
+            y += 11
+
+    device.display(image)
+
+
 def drawBlankSignage(device, width, height, departureStation):
     global stationRenderCount, pauseCount
 
@@ -404,6 +501,11 @@ try:
         isDimmed = isRun(dimmingConfig["startHour"], dimmingConfig["endHour"])
         setContrast(device, dimmingConfig["brightness"] if isDimmed
                     else dimmingConfig.get("normalBrightness", 255))
+
+    splashConfig = getSplashConfig(config)
+    if splashConfig:
+        drawSplashScreen(device, width=widgetWidth, height=widgetHeight, splashConfig=splashConfig)
+        time.sleep(splashConfig["durationSeconds"])
 
     data = fetchData(config)
 
