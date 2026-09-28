@@ -18,11 +18,14 @@ Uses the publicly available [Real Time Trains API](https://www.realtimetrains.co
 
 ## Installation
 
-To run this code, you will need Python 3.6+
+To run this code, you will need Python 3.9+ (tested against the current stable release, Python 3.14).
 
-To install the latest version of Python (3.7 at time of writing) on Raspbian, go [here](https://gist.github.com/SeppPenner/6a5a30ebc8f79936fa136c524417761d).
+Raspberry Pi OS ships a recent Python 3 by default; check with `python3 --version`. If you need a newer one, see [here](https://gist.github.com/SeppPenner/6a5a30ebc8f79936fa136c524417761d) for installing an alternative version on Raspbian/Raspberry Pi OS.
 
 You will likely need to set up an alias so that when you type Python you get the latest installed version, a handy guide on how to do this on Raspbin is [here](https://linuxconfig.org/how-to-change-from-default-to-alternative-python-version-on-debian-linux).  If you used the above guide to install the latest Python your path to the executable will be /usr/local/bin/python3.x
+
+>### Desktop emulator (`--display pygame`/`capture`)
+>`pygame` may not yet publish a prebuilt wheel for the very latest Python release, in which case `pip` builds it from source. On macOS/Linux that requires SDL2's dev headers (and, for the emulator's on-screen assets to load, `SDL2_image`/`SDL2_ttf`/`SDL2_mixer` too), e.g. on macOS: `brew install sdl2 sdl2_image sdl2_mixer sdl2_ttf`. Without them the build still succeeds but silently lacks PNG support, which breaks the emulator windows (`pygame.error: File is not a Windows BMP file`). This only affects the desktop emulator — real hardware (`ssd1322` over SPI) doesn't use pygame at all.
 
 >### Raspbian Lite
 >If you're using Raspbian Lite, you'll also need to install:

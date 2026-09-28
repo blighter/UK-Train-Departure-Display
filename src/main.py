@@ -3,8 +3,6 @@ import sys
 import time
 import json
 
-from datetime import timedelta
-from timeloop import Timeloop
 from datetime import datetime
 from PIL import ImageFont, Image
 from helpers import get_device
@@ -17,6 +15,11 @@ def loadConfig():
     with open('config.json', 'r') as jsonConfig:
         data = json.load(jsonConfig)
         return data
+
+def textsize(draw, text, font):
+    # Pillow >=10 removed ImageDraw.textsize(); textbbox is the replacement.
+    left, top, right, bottom = draw.textbbox((0, 0), text, font=font)
+    return right - left, bottom - top
 
 def makeFont(name, size):
     font_path = os.path.abspath(
@@ -53,7 +56,7 @@ def renderServiceStatus(departure):
             if departure["aimed_departure_time"] == departure["expected_departure_time"]:
                 train = "On time"
 
-        w, h = draw.textsize(train, font)
+        w, h = textsize(draw, train, font)
         draw.text((width-w,0), text=train, font=font, fill="yellow")
     return drawText
 
@@ -94,8 +97,8 @@ def renderTime(draw, width, height):
     rawTime = datetime.now().time()
     hour, minute, second = str(rawTime).split('.')[0].split(':')
 
-    w1, h1 = draw.textsize("{}:{}".format(hour, minute), fontBoldLarge)
-    w2, h2 = draw.textsize(":00", fontBoldTall)
+    w1, h1 = textsize(draw, "{}:{}".format(hour, minute), fontBoldLarge)
+    w2, h2 = textsize(draw, ":00", fontBoldTall)
 
     draw.text(((width - w1 - w2) / 2, 0), text="{}:{}".format(hour, minute),
               font=fontBoldLarge, fill="yellow")
@@ -161,10 +164,10 @@ def drawBlankSignage(device, width, height, departureStation):
     global stationRenderCount, pauseCount
 
     with canvas(device) as draw:
-        welcomeSize = draw.textsize("Welcome to", fontBold)
+        welcomeSize = textsize(draw, "Welcome to", fontBold)
 
     with canvas(device) as draw:
-        stationSize = draw.textsize(departureStation, fontBold)
+        stationSize = textsize(draw, departureStation, fontBold)
 
     device.clear()
 
@@ -202,15 +205,15 @@ def drawSignage(device, width, height, data):
     departures, firstDepartureDestinations, departureStation = data
 
     with canvas(device) as draw:
-        w, h = draw.textsize(callingAt, font)
+        w, h = textsize(draw, callingAt, font)
 
     callingWidth = w
     width = virtualViewport.width
 
     # First measure the text size
     with canvas(device) as draw:
-        w, h = draw.textsize(status, font)
-        pw, ph = draw.textsize("Plat 88", font)
+        w, h = textsize(draw, status, font)
+        pw, ph = textsize(draw, "Plat 88", font)
 
     rowOneA = snapshot(
         width - w - pw, 10, renderDestination(departures[0], fontBold), interval=10)
