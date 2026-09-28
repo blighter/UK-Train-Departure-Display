@@ -6,6 +6,8 @@ No excuses for missing your train now. Well, unless it's cancelled. We'll tell y
 
 ![Normal operation](assets/normal.gif)
 
+> **In a hurry?** Wire up the display, clone the repo, then run `./scripts/setup.sh`. It installs dependencies, walks you through `config.json` interactively, and can install the background service — and automatic updates — for you. It's safe to run again any time you want to change a setting. The steps below cover the same ground by hand, and are worth a skim regardless (especially [wiring](#1-wire-it-up) and [troubleshooting](#troubleshooting)).
+
   * [What you'll need](#what-youll-need)
   * [1. Wire it up](#1-wire-it-up)
   * [2. Install the software](#2-install-the-software)
@@ -13,6 +15,7 @@ No excuses for missing your train now. Well, unless it's cancelled. We'll tell y
   * [4. Configure your board](#4-configure-your-board)
   * [5. Take it for a test run](#5-take-it-for-a-test-run)
   * [6. Install it as a background service](#6-install-it-as-a-background-service)
+  * [7. Keep it up to date automatically](#7-keep-it-up-to-date-automatically)
   * [Configuration reference](#configuration-reference)
   * [Running the desktop emulator](#running-the-desktop-emulator)
   * [Troubleshooting](#troubleshooting)
@@ -139,6 +142,8 @@ Press `Ctrl+C` to stop it.
 
 Running it in your SSH session is great for testing, but the moment you close that terminal (or your connection drops on the platform edge of your WiFi signal), the display will die with it. To keep the board running permanently — surviving reboots, disconnects, and power blips — install it as a `systemd` service.
 
+> `./scripts/setup.sh` does everything below for you (copying the repo into place and installing the unit file) — this is what to read if you'd rather do it by hand, or want to know what the script is doing.
+
 This repo ships a ready-made unit file at `systemd/traindep.service`. It expects the code to live at `/var/local/UK-Train-Departure-Display`, so let's put it there:
 
 ```bash
@@ -173,6 +178,34 @@ sudo journalctl -u traindep.service -f    # tail the logs live
 > nohup ./run.sh > traindep.log 2>&1 &
 > ```
 > This survives you logging out, but won't restart on crash or reboot — `systemd` is the recommended route for anything left running unattended.
+
+</details>
+
+<details open>
+<summary><h2>7. Keep it up to date automatically</h2></summary>
+
+Once it's tucked away behind a display, you're not going to SSH in and `git pull` every time there's a fix. `scripts/update.sh` does that for you: it fetches `origin`, fast-forwards the checkout at `/var/local/UK-Train-Departure-Display` if there's anything new, reinstalls `requirements.txt` if that changed, and restarts `traindep.service` so the new code takes effect — all without ever merging or force-pushing.
+
+It refuses to touch anything if the checkout has local edits (so hand-editing on the Pi is safe) or if history has diverged from `origin` (so it never overwrites work with a forced push). If a post-update dependency install fails, it rolls the checkout back to the previous commit rather than leaving the service on code it can't run.
+
+Wire it up to run on a timer:
+
+```bash
+sudo cp /var/local/UK-Train-Departure-Display/systemd/traindep-update.service /etc/systemd/system/
+sudo cp /var/local/UK-Train-Departure-Display/systemd/traindep-update.timer /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now traindep-update.timer
+```
+
+That checks for updates 5 minutes after boot and every 30 minutes after that (edit `OnUnitActiveSec` in the timer unit to change the interval). Handy commands:
+
+```bash
+sudo systemctl start traindep-update.service    # check for an update right now
+sudo journalctl -u traindep-update.service -f   # see what the last check did
+sudo systemctl list-timers traindep-update.timer  # when it'll next run
+```
+
+Pushing a new commit to `origin` is now all it takes to roll it out to every board running this.
 
 </details>
 

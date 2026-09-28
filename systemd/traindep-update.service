@@ -1,0 +1,9 @@
+[Unit]
+Description=UK Train Departure Display self-updater
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/var/local/UK-Train-Departure-Display
+ExecStart=/var/local/UK-Train-Departure-Display/scripts/update.sh
