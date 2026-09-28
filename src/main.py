@@ -2,11 +2,13 @@ import os
 import sys
 import time
 import json
+import requests
 
 from datetime import datetime
 from PIL import ImageFont, Image
 from helpers import get_device
 from trains import loadDeparturesForStation, loadDestinationsForDeparture, loadDeparturesForStationRTT, loadDestinationsForDepartureRTT
+from luma.core.error import Error as DeviceError
 from luma.core.render import canvas
 from luma.core.virtual import viewport, snapshot
 from open import isRun
@@ -65,7 +67,7 @@ def renderPlatform(departure):
         if departure["mode"] == "bus":
             draw.text((0, 0), text="BUS", font=font, fill="yellow")
         else:
-            if isinstance(departure["platform"], str):
+            if departure["platform"]:
                 draw.text((0, 0), text="Plat "+departure["platform"], font=font, fill="yellow")
     return drawText
 
@@ -152,7 +154,7 @@ def loadDataRTT(apiConfig, journeyConfig):
         journeyConfig, apiConfig["username"], apiConfig["password"])
 
     if len(departures) == 0:
-        return False, False, journeyConfig['outOfHoursName']
+        return False, False, stationName
 
     firstDepartureDestinations = loadDestinationsForDepartureRTT(
         journeyConfig, apiConfig["username"], apiConfig["password"], departures[0]["time_table_url"])    
@@ -215,30 +217,6 @@ def drawSignage(device, width, height, data):
         w, h = textsize(draw, status, font)
         pw, ph = textsize(draw, "Plat 88", font)
 
-    rowOneA = snapshot(
-        width - w - pw, 10, renderDestination(departures[0], fontBold), interval=10)
-    rowOneB = snapshot(w, 10, renderServiceStatus(
-        departures[0]), interval=1)
-    rowOneC = snapshot(pw, 10, renderPlatform(departures[0]), interval=10)
-    rowTwoA = snapshot(callingWidth, 10, renderCallingAt, interval=100)
-    rowTwoB = snapshot(width - callingWidth, 10,
-                       renderStations(", ".join(firstDepartureDestinations)), interval=0.1)
-    if(len(departures) > 1):
-        rowThreeA = snapshot(width - w - pw, 10, renderDestination(
-            departures[1],font), interval=10)
-        rowThreeB = snapshot(w, 10, renderServiceStatus(
-            departures[1]), interval=1)
-        rowThreeC = snapshot(pw, 10, renderPlatform(departures[1]), interval=10)
-
-    if(len(departures) > 2):
-        rowFourA = snapshot(width - w - pw, 10, renderDestination(
-            departures[2],font), interval=10)
-        rowFourB = snapshot(w, 10, renderServiceStatus(
-            departures[2]), interval=1)
-        rowFourC = snapshot(pw, 10, renderPlatform(departures[2]), interval=10)
-
-    rowTime = snapshot(width, 14, renderTime, interval=1)
-
     if len(virtualViewport._hotspots) > 0:
         for hotspot, xy in virtualViewport._hotspots:
             virtualViewport.remove_hotspot(hotspot, xy)
@@ -246,19 +224,29 @@ def drawSignage(device, width, height, data):
     stationRenderCount = 0
     pauseCount = 0
 
-    virtualViewport.add_hotspot(rowOneA, (0, 0))
-    virtualViewport.add_hotspot(rowOneB, (width - w, 0))
-    virtualViewport.add_hotspot(rowOneC, (width - w - pw, 0))
+    # Row y=0 is the next departure (in bold); y=12 is the "Calling at"
+    # scroller below; y=24/36 show the two departures after that, if any.
+    # Only the first 3 departures are ever shown, even though the API
+    # returns more.
+    departureRows = [(0, fontBold), (24, font), (36, font)]
+
+    for departure, (y, departureFont) in zip(departures, departureRows):
+        destinationHotspot = snapshot(
+            width - w - pw, 10, renderDestination(departure, departureFont), interval=10)
+        statusHotspot = snapshot(w, 10, renderServiceStatus(departure), interval=1)
+        platformHotspot = snapshot(pw, 10, renderPlatform(departure), interval=10)
+
+        virtualViewport.add_hotspot(destinationHotspot, (0, y))
+        virtualViewport.add_hotspot(statusHotspot, (width - w, y))
+        virtualViewport.add_hotspot(platformHotspot, (width - w - pw, y))
+
+    rowTwoA = snapshot(callingWidth, 10, renderCallingAt, interval=100)
+    rowTwoB = snapshot(width - callingWidth, 10,
+                       renderStations(", ".join(firstDepartureDestinations)), interval=0.1)
     virtualViewport.add_hotspot(rowTwoA, (0, 12))
     virtualViewport.add_hotspot(rowTwoB, (callingWidth, 12))
-    if(len(departures) > 1):
-        virtualViewport.add_hotspot(rowThreeA, (0, 24))
-        virtualViewport.add_hotspot(rowThreeB, (width - w, 24))
-        virtualViewport.add_hotspot(rowThreeC, (width - w - pw, 24))
-    if(len(departures) > 2):
-        virtualViewport.add_hotspot(rowFourA, (0, 36))
-        virtualViewport.add_hotspot(rowFourB, (width - w, 36))
-        virtualViewport.add_hotspot(rowFourC, (width - w - pw, 36))
+
+    rowTime = snapshot(width, 14, renderTime, interval=1)
     virtualViewport.add_hotspot(rowTime, (0, 50))
 
     return virtualViewport
@@ -297,17 +285,23 @@ try:
 
     while True:
         if(timeNow - timeAtStart >= config["refreshTime"]):
-            if config["apiMethod"] == 'rtt':
-                data = loadDataRTT(config["rttApi"], config["journey"])
-            else:
-                data = loadData(config["transportApi"], config["journey"])      
-                
-            if data[0] == False:
-                virtual = drawBlankSignage(
-                    device, width=widgetWidth, height=widgetHeight, departureStation=data[2])
-            else:
-                virtual = drawSignage(device, width=widgetWidth,
-                                      height=widgetHeight, data=data)
+            try:
+                if config["apiMethod"] == 'rtt':
+                    data = loadDataRTT(config["rttApi"], config["journey"])
+                else:
+                    data = loadData(config["transportApi"], config["journey"])
+
+                if data[0] == False:
+                    virtual = drawBlankSignage(
+                        device, width=widgetWidth, height=widgetHeight, departureStation=data[2])
+                else:
+                    virtual = drawSignage(device, width=widgetWidth,
+                                          height=widgetHeight, data=data)
+            except requests.exceptions.RequestException as err:
+                # A transient network/API failure shouldn't kill the whole
+                # process - keep showing the last good data and try again
+                # on the next refresh.
+                print(f"Warning: {err} - keeping previous display, retrying next refresh")
 
             timeAtStart = time.time()
 
@@ -316,6 +310,10 @@ try:
 
 except KeyboardInterrupt:
     pass
+except DeviceError as err:
+    print(f"Error: {err}")
+except requests.exceptions.RequestException as err:
+    print(f"Error: {err}")
 except ValueError as err:
     print(f"Error: {err}")
 except KeyError as err:

@@ -59,6 +59,14 @@ def get_device(actual_args=None):
     # create device
     try:
         device = cmdline.create_device(args)
+    except error.DeviceNotFoundError as e:
+        # Most commonly this means SPI hasn't been enabled on the Pi (or the
+        # spi-dev kernel module isn't loaded), rather than a bad CLI arg, so
+        # give an actionable message instead of routing it through argparse.
+        raise error.DeviceNotFoundError(
+            "{}. Enable SPI with 'sudo raspi-config' (Interface Options > "
+            "SPI > Yes), then reboot and try again.".format(e)
+        ) from e
     except error.Error as e:
         parser.error(e)
 

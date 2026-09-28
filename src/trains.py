@@ -22,6 +22,16 @@ def loadDeparturesForStationRTT(journeyConfig, username, password):
 
     response = requests.get(f"https://api.rtt.io/api/v1/json/search/{departureStation}", auth=(username, password))
     data = response.json()
+
+    if "error" in data:
+        raise ValueError(data["error"])
+
+    if "services" not in data:
+        raise ValueError(
+            "Unexpected response from the Real Time Trains API (no 'services' field); "
+            "check the departureStation code and rttApi credentials in config.json"
+        )
+
     translated_departures = []
     td = date.today()
 
@@ -35,7 +45,7 @@ def loadDeparturesForStationRTT(journeyConfig, username, password):
         dt = item['locationDetail']['gbttBookedDeparture']
         try:
             edt = item['locationDetail']['realtimeDeparture']
-        except:
+        except KeyError:
             edt = item['locationDetail']['gbttBookedDeparture']
 
         aimed_departure_time = dt[:2] + ':' + dt[2:]
@@ -44,8 +54,8 @@ def loadDeparturesForStationRTT(journeyConfig, username, password):
         mode = item['serviceType']
         try:
             platform = item['locationDetail']['platform']
-        except:
-            platform = ""
+        except KeyError:
+            platform = None
 
         translated_departures.append({'uid': uid, 'destination_name': abbrStation(journeyConfig, destination_name), 'aimed_departure_time': aimed_departure_time, 
                                         'expected_departure_time': expected_departure_time,
@@ -93,14 +103,15 @@ def loadDeparturesForStation(journeyConfig, appId, apiKey):
     r = requests.get(url=URL, params=PARAMS)
 
     data = r.json()
-    #apply abbreviations / replacements to station names (long stations names dont look great on layout)
-    #see config file for replacement list 
-    for item in data["departures"]["all"]:
-         item['origin_name'] = abbrStation(journeyConfig, item['origin_name'])
-         item['destination_name'] = abbrStation(journeyConfig, item['destination_name'])
 
     if "error" in data:
         raise ValueError(data["error"])
+
+    #apply abbreviations / replacements to station names (long stations names dont look great on layout)
+    #see config file for replacement list
+    for item in data["departures"]["all"]:
+         item['origin_name'] = abbrStation(journeyConfig, item['origin_name'])
+         item['destination_name'] = abbrStation(journeyConfig, item['destination_name'])
 
     return data["departures"]["all"], data["station_name"]
 
@@ -109,6 +120,9 @@ def loadDestinationsForDeparture(journeyConfig, timetableUrl):
     r = requests.get(url=timetableUrl)
 
     data = r.json()
+
+    if "error" in data:
+        raise ValueError(data["error"])
 
     #apply abbreviations / replacements to station names (long stations names dont look great on layout)
     #see config file for replacement list
@@ -123,9 +137,6 @@ def loadDestinationsForDeparture(journeyConfig, timetableUrl):
             continue
 
         item['station_name'] = abbrStation(journeyConfig, item['station_name'])
-
-    if "error" in data:
-        raise ValueError(data["error"])
 
     departureDestinationList = list(map(lambda x: x["station_name"], data["stops"]))[1:]
 
