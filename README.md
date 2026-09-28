@@ -19,7 +19,8 @@ No excuses for missing your train now. Well, unless it's cancelled. We'll tell y
   * [3D printed case](#3d-printed-case)
   * [Credits](#credits)
 
-## What you'll need
+<details open>
+<summary><h2>What you'll need</h2></summary>
 
 - A Raspberry Pi (any model with a 40-pin GPIO header and network access will do)
 - A 256x64 SSD1322 (or compatible SSD13xx) OLED display
@@ -27,7 +28,10 @@ No excuses for missing your train now. Well, unless it's cancelled. We'll tell y
 - A [Real Time Trains API](https://api.rtt.io) account (free)
 - 15 minutes and a mild enthusiasm for trains
 
-## 1. Wire it up
+</details>
+
+<details open>
+<summary><h2>1. Wire it up</h2></summary>
 
 Connect your OLED display to the Pi's GPIO header over SPI.
 
@@ -43,7 +47,10 @@ sudo raspi-config
 # Interface Options -> SPI -> Enable
 ```
 
-## 2. Install the software
+</details>
+
+<details open>
+<summary><h2>2. Install the software</h2></summary>
 
 SSH into your Pi (or grab a keyboard and monitor, we don't judge) and clone the repo:
 
@@ -73,11 +80,17 @@ pip3 install -r requirements.txt
 
 > If `pip3` isn't a thing on your system, but `pip` is aliased to Python 3.6+, `pip` will do just fine.
 
-## 3. Get API access
+</details>
+
+<details open>
+<summary><h2>3. Get API access</h2></summary>
 
 Sign up for a free account at [api.rtt.io](https://api.rtt.io) — this gives you a username and password for the Real Time Trains API, which is what actually tells your board when the next train is departing (and whether it's running late, again).
 
-## 4. Configure your board
+</details>
+
+<details open>
+<summary><h2>4. Configure your board</h2></summary>
 
 Copy the sample config and fill in your details:
 
@@ -102,7 +115,10 @@ At minimum, you need to set:
 
 Look up your station's short code (CRS) [on National Rail's site](https://www.nationalrail.co.uk/stations_destinations/48541.aspx). See the [configuration reference](#configuration-reference) below for every other option (destination filtering, refresh timing, dimming schedules, and so on).
 
-## 5. Take it for a test run
+</details>
+
+<details open>
+<summary><h2>5. Take it for a test run</h2></summary>
 
 Before you commit to running this forever, give it a manual spin from the repo root:
 
@@ -116,7 +132,10 @@ If nothing appears, jump to [Troubleshooting](#troubleshooting).
 
 Press `Ctrl+C` to stop it.
 
-## 6. Install it as a background service
+</details>
+
+<details open>
+<summary><h2>6. Install it as a background service</h2></summary>
 
 Running it in your SSH session is great for testing, but the moment you close that terminal (or your connection drops on the platform edge of your WiFi signal), the display will die with it. To keep the board running permanently — surviving reboots, disconnects, and power blips — install it as a `systemd` service.
 
@@ -155,7 +174,10 @@ sudo journalctl -u traindep.service -f    # tail the logs live
 > ```
 > This survives you logging out, but won't restart on crash or reboot — `systemd` is the recommended route for anything left running unattended.
 
-## Configuration reference
+</details>
+
+<details>
+<summary><h2>Configuration reference</h2></summary>
 
 ### General settings
 
@@ -220,7 +242,10 @@ Set to `"rtt"` (the default) to use Real Time Trains, or `"transport"` to fall b
 
 Not every display backend supports hardware contrast control (e.g. the desktop emulator) — on those, dimming is silently a no-op.
 
-## Running the desktop emulator
+</details>
+
+<details>
+<summary><h2>Running the desktop emulator</h2></summary>
 
 Don't have a Pi or a screen handy? You can preview the board on your own machine without any hardware, using `luma.emulator`.
 
@@ -240,20 +265,29 @@ A full list of `--display` options lives in the [luma.examples README](https://g
 
 Note that all of these commands must be run from the repo root, since `config.json` is opened by relative path.
 
-## Troubleshooting
+</details>
+
+<details>
+<summary><h2>Troubleshooting</h2></summary>
 
 - **Nothing appears on screen** — double check your wiring against the pinout diagrams above, and confirm SPI is enabled (`sudo raspi-config`).
 - **`Please ensure the 'outOfHoursName' environment variable is set`** — despite the wording, this means `journey.outOfHoursName` is missing from `config.json`. Set it to whatever text you'd like shown outside operating hours.
 - **The board just stops after a while** — check `sudo journalctl -u traindep.service -f` if running as a service, or your terminal output otherwise. A handful of failed refreshes are tolerated and retried automatically; a persistent API or network failure will eventually surface an error.
 - **Emulator window won't open / BMP errors** — see the SDL2 note under [Running the desktop emulator](#running-the-desktop-emulator).
 
-## 3D printed case
+</details>
+
+<details>
+<summary><h2>3D printed case</h2></summary>
 
 Fancy housing your board properly? `3d-printed-case/` has the OpenSCAD source and ready-to-print STL files for a case.
 
 ![3D printed case preview](assets/train-display-open-scad.png)
 
-## Credits
+</details>
+
+<details>
+<summary><h2>Credits</h2></summary>
 
 This project was originally built by [Chris Hutchinson](https://github.com/chrishutchinson/) — [he posted a video demo](https://twitter.com/chrishutchinson/status/1136743837244768257) of it running on real hardware, well worth a watch.
 
@@ -264,5 +298,7 @@ The dot-matrix fonts are the work of [`DanielHartUK`](https://github.com/DanielH
 ### Example: out of hours / no services
 
 ![Out of hours](assets/outofhours.gif)
+
+</details>
 
 Enjoy your new departure board — may your trains always be "On time" and never "Cancelled". 🚉
