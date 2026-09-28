@@ -331,6 +331,7 @@ Note that all of these commands must be run from the repo root, since `config.js
 - **`Please ensure the 'outOfHoursName' environment variable is set`** — despite the wording, this means `journey.outOfHoursName` is missing from `config.json`. Set it to whatever text you'd like shown outside operating hours.
 - **The board just stops after a while** — check `sudo journalctl -u traindep.service -f` if running as a service, or your terminal output otherwise. A handful of failed refreshes are tolerated and retried automatically; a persistent API or network failure will eventually surface an error.
 - **Emulator window won't open / BMP errors** — see the SDL2 note under [Running the desktop emulator](#running-the-desktop-emulator).
+- **`error: externally-managed-environment` from pip** — Debian 12+ (Bookworm, the current Raspberry Pi OS) blocks `pip install` against the system Python by default (PEP 668). `scripts/setup.sh` and `scripts/update.sh` both pass `--break-system-packages` automatically when pip supports it; if you're running `pip3 install -r requirements.txt` by hand, add that flag yourself.
 
 </details>
 
