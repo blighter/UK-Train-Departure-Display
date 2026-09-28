@@ -63,7 +63,16 @@ NEW_HEAD=$(git rev-parse HEAD)
 
 if git diff --name-only "$OLD_HEAD" "$NEW_HEAD" | grep -qx 'requirements.txt'; then
     log "requirements.txt changed, reinstalling dependencies"
-    if ! pip3 install -r requirements.txt; then
+    # Debian 12+ (Bookworm) marks the system Python as externally-managed
+    # (PEP 668) and refuses a bare `pip install`. There's no venv here —
+    # this runs as root via systemd against the system interpreter — so
+    # pass --break-system-packages when pip understands it; older pip
+    # (Bullseye and earlier) doesn't have the flag at all.
+    PIP_EXTRA_ARGS=""
+    if pip3 install --help 2>/dev/null | grep -q -- '--break-system-packages'; then
+        PIP_EXTRA_ARGS="--break-system-packages"
+    fi
+    if ! pip3 install $PIP_EXTRA_ARGS -r requirements.txt; then
         log "dependency install failed — rolling back to $OLD_HEAD so the running service stays consistent"
         git reset --hard "$OLD_HEAD"
         exit 1
