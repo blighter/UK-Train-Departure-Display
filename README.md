@@ -1,121 +1,203 @@
-# UK Train Departure Display 
+# 🚆 UK Train Departure Display
 
-## NOW UPDATED TO USE [Real Time Trains API](https://www.realtimetrains.co.uk/about/developer/) !!
+A little OLED departure board for your desk, hallway, or platform-obsessed home office. It shows real UK train times, calling points, delays and cancellations, styled like the dot-matrix boards you'd see at your local station — powered by a Raspberry Pi and the [Real Time Trains API](https://www.realtimetrains.co.uk/about/developer/).
 
+No excuses for missing your train now. Well, unless it's cancelled. We'll tell you that too. 🙃
 
-This has been done because Transport API now has draconian usage limitations, the free tier is now down to 30 API calls a day from 1000! 
+![Normal operation](assets/normal.gif)
 
-You can still use the Transport API but you will need a commercial agreement. 
+  * [What you'll need](#what-youll-need)
+  * [1. Wire it up](#1-wire-it-up)
+  * [2. Install the software](#2-install-the-software)
+  * [3. Get API access](#3-get-api-access)
+  * [4. Configure your board](#4-configure-your-board)
+  * [5. Take it for a test run](#5-take-it-for-a-test-run)
+  * [6. Install it as a background service](#6-install-it-as-a-background-service)
+  * [Configuration reference](#configuration-reference)
+  * [Running the desktop emulator](#running-the-desktop-emulator)
+  * [Troubleshooting](#troubleshooting)
+  * [3D printed case](#3d-printed-case)
+  * [Credits](#credits)
 
-A set of python scripts to display replica near real-time UK railway station departure data on SSD13xx style screens.
-Uses the publicly available [Real Time Trains API](https://www.realtimetrains.co.uk/about/developer/) 
+## What you'll need
 
-   * [Installation](#installation)
-   * [Configuration](#configuration)
-   * [Running](#running)
+- A Raspberry Pi (any model with a 40-pin GPIO header and network access will do)
+- A 256x64 SSD1322 (or compatible SSD13xx) OLED display
+- Some jumper wires
+- A [Real Time Trains API](https://api.rtt.io) account (free)
+- 15 minutes and a mild enthusiasm for trains
 
-![](normal.gif)
+## 1. Wire it up
 
-## Installation
+Connect your OLED display to the Pi's GPIO header over SPI.
 
-To run this code, you will need Python 3.9+ (tested against the current stable release, Python 3.14).
+![SSD1322 pinout](assets/ssd1322-pinout.jpg)
+![Luma OLED SPI pin configuration](assets/luma-oled-spi-pin-configuration.png)
 
-Raspberry Pi OS ships a recent Python 3 by default; check with `python3 --version`. If you need a newer one, see [here](https://gist.github.com/SeppPenner/6a5a30ebc8f79936fa136c524417761d) for installing an alternative version on Raspbian/Raspberry Pi OS.
+If you're planning to make it look extra tidy, there's a [3D printed case](#3d-printed-case) further down.
 
-You will likely need to set up an alias so that when you type Python you get the latest installed version, a handy guide on how to do this on Raspbin is [here](https://linuxconfig.org/how-to-change-from-default-to-alternative-python-version-on-debian-linux).  If you used the above guide to install the latest Python your path to the executable will be /usr/local/bin/python3.x
-
->### Desktop emulator (`--display pygame`/`capture`)
->`pygame` may not yet publish a prebuilt wheel for the very latest Python release, in which case `pip` builds it from source. On macOS/Linux that requires SDL2's dev headers (and, for the emulator's on-screen assets to load, `SDL2_image`/`SDL2_ttf`/`SDL2_mixer` too), e.g. on macOS: `brew install sdl2 sdl2_image sdl2_mixer sdl2_ttf`. Without them the build still succeeds but silently lacks PNG support, which breaks the emulator windows (`pygame.error: File is not a Windows BMP file`). This only affects the desktop emulator — real hardware (`ssd1322` over SPI) doesn't use pygame at all.
-
->### Raspbian Lite
->If you're using Raspbian Lite, you'll also need to install:
->- `libopenjp2-7`
->with:
->```bash
->$ sudo apt-get install libopenjp2-7
->```
-
-Clone this repo
-
-Install dependencies
+Make sure SPI is enabled on your Pi:
 
 ```bash
-$ pip3 install -r requirements.txt
+sudo raspi-config
+# Interface Options -> SPI -> Enable
 ```
->If you installed Python using the above guide you will need to use pip3 instead of pip to install the requirements, if not or if your pip is aliased to python 3.6+ you can just use pip
 
-## Configuration 
+## 2. Install the software
 
-Sign up for the [Real Time Trains API](https://api.rtt.io), and get your username and password.
+SSH into your Pi (or grab a keyboard and monitor, we don't judge) and clone the repo:
 
-You can still use the old transportAPI (fill in the details and change apiMethod to 'transport') as an alternative but you will either need to have a commercial agreement as the limits on API calls are now so small it is not pratical to use in a real time way. 
+```bash
+git clone git@github.com:blighter/UK-Train-Departure-Display.git
+cd UK-Train-Departure-Display
+```
 
-Copy `config.sample.json` to `config.json` and complete.
+Check your Python version — you'll need 3.9+:
+
+```bash
+python3 --version
+```
+
+Raspberry Pi OS ships a recent Python 3 by default, so you're most likely already good to go. If you need a newer one, [here's a guide](https://gist.github.com/SeppPenner/6a5a30ebc8f79936fa136c524417761d) for installing an alternative version on Raspberry Pi OS, and [here's how to make `python3` point at it](https://linuxconfig.org/how-to-change-from-default-to-alternative-python-version-on-debian-linux).
+
+> **On Raspberry Pi OS Lite**, you'll also need one extra system package before installing the Python dependencies:
+> ```bash
+> sudo apt-get install libopenjp2-7
+> ```
+
+Now install the Python dependencies:
+
+```bash
+pip3 install -r requirements.txt
+```
+
+> If `pip3` isn't a thing on your system, but `pip` is aliased to Python 3.6+, `pip` will do just fine.
+
+## 3. Get API access
+
+Sign up for a free account at [api.rtt.io](https://api.rtt.io) — this gives you a username and password for the Real Time Trains API, which is what actually tells your board when the next train is departing (and whether it's running late, again).
+
+## 4. Configure your board
+
+Copy the sample config and fill in your details:
+
+```bash
+cp config.sample.json config.json
+```
+
+At minimum, you need to set:
 
 ```javascript
 {
-    "journey": {
-      "departureStation": "",
-      "destinationStation": null,
-      "stationAbbr": {
-        "International": "Intl."
-      }
-    },
-    "refreshTime": 180,
-    "transportApi": {
-      "appId": "",
-      "apiKey": "",
-      "operatingHours": "0-23"
-    },
-    "rttApi":{
-        "username": "",
-        "password": "",
-        "operatingHours": "6-23"
-      },
-      "apiMethod": "rtt"    
+  "journey": {
+    "departureStation": "SVG",       // your station's CRS code
+    "outOfHoursName": "Sevenoaks"    // shown on the blank screen outside operating hours
+  },
+  "rttApi": {
+    "username": "your-rtt-username",
+    "password": "your-rtt-password"
   }
+}
 ```
-### General Settings
 
-`refreshTime` - how frequently it asks for new data from the chosen api, there will be two api calls each time this time elapses, be aware the free tier of transport api (not used by default) has 30 calls a day.
+Look up your station's short code (CRS) [on National Rail's site](https://www.nationalrail.co.uk/stations_destinations/48541.aspx). See the [configuration reference](#configuration-reference) below for every other option (destination filtering, refresh timing, dimming schedules, and so on).
 
-### Journey Settings
+## 5. Take it for a test run
 
-`departureStation` - the [short code](https://www.nationalrail.co.uk/stations_destinations/48541.aspx) for the starting station 
+Before you commit to running this forever, give it a manual spin from the repo root:
 
-`destinationStation` - the optional [short code](https://www.nationalrail.co.uk/stations_destinations/48541.aspx) for the destination station 
+```bash
+./run.sh
+```
 
-`stationAbbr` - a list of words and their abbreviations that can be used to shorten station names, useful for small displays. 
+This runs `src/main.py` with the flags for a real SSD1322 display wired over SPI. If your board bursts into life with today's departures, congratulations — you're now the proud operator of your own miniature station. All aboard! 🎉
 
-### Real Time Trains API Settings (Default)
+If nothing appears, jump to [Troubleshooting](#troubleshooting).
 
-`username` - your real time trains username
+Press `Ctrl+C` to stop it.
 
-`password` - your real time trains password
+## 6. Install it as a background service
 
-`operating hours` - the range of hours you wish the display to actively request train times, be aware the free tier API has a limit of 1000 calls a day.
+Running it in your SSH session is great for testing, but the moment you close that terminal (or your connection drops on the platform edge of your WiFi signal), the display will die with it. To keep the board running permanently — surviving reboots, disconnects, and power blips — install it as a `systemd` service.
 
-### Transport API Settings (DONT USE)
+This repo ships a ready-made unit file at `systemd/traindep.service`. It expects the code to live at `/var/local/UK-Train-Departure-Display`, so let's put it there:
 
-`appId` - your transport api application ID
+```bash
+sudo mkdir -p /var/local
+sudo cp -r ~/UK-Train-Departure-Display /var/local/
+```
 
-`apiKey` - your transport api key
+(Adjust the source path if you cloned it somewhere other than your home directory.)
 
-`operating hours` - the range of hours you wish the display to actively request train times, be aware the free tier API has a limit of 1000 calls a day.
+Now install and enable the service:
 
-### Setting The Live API
+```bash
+sudo cp /var/local/UK-Train-Departure-Display/systemd/traindep.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable traindep.service
+sudo systemctl start traindep.service
+```
 
-`apiMethod` - By default this is set to 'rtt' to use the Real Time Trains API, to chnage to the transport api set this to 'transport' 
+That's it — the display now runs in the background, restarts automatically if it crashes (`Restart=on-failure`), and comes back up on its own after a reboot. You can safely close your SSH session; the train doesn't stop just because the conductor's gone home. 🚂
 
-### Reliability Settings (optional)
+Handy commands for managing it afterwards:
 
-`retryBackoffSeconds` - if a refresh fails (network blip, API error), the display keeps showing the last good data and retries after these delays in turn, e.g. `[10, 30, 60]` retries after 10s, then 30s, then 60s. Once the list is exhausted it falls back to trying again every `refreshTime` seconds. Defaults to `[10, 30, 60]` if omitted.
+```bash
+sudo systemctl status traindep.service    # is it running?
+sudo systemctl stop traindep.service      # stop it
+sudo systemctl restart traindep.service   # restart it (e.g. after editing config.json)
+sudo journalctl -u traindep.service -f    # tail the logs live
+```
 
-`staleAfterSeconds` - if no refresh has succeeded for this long, a small `!` is shown next to the clock so you can tell the board is showing old data rather than live times. Defaults to `refreshTime * 2` if omitted.
+> **Prefer not to use systemd?** A quick-and-dirty alternative is `nohup`, which detaches the process from your terminal session:
+> ```bash
+> nohup ./run.sh > traindep.log 2>&1 &
+> ```
+> This survives you logging out, but won't restart on crash or reboot — `systemd` is the recommended route for anything left running unattended.
 
-### Display Settings (optional)
+## Configuration reference
 
-`display.dimming` - dims the panel outside of your chosen hours (useful for a bedroom/hallway install), independently of `operatingHours`.
+### General settings
+
+| Key | Description |
+|---|---|
+| `refreshTime` | How often (in seconds) the board asks the API for new data. Each refresh costs up to two API calls. |
+
+### Journey settings (`journey`)
+
+| Key | Description |
+|---|---|
+| `departureStation` | The [CRS code](https://www.nationalrail.co.uk/stations_destinations/48541.aspx) for your station. |
+| `destinationStation` | Optional CRS code to only show trains heading towards a particular destination. |
+| `outOfHoursName` | The text shown on the blank "Welcome to..." screen outside operating hours, or when there are no services running. Required. |
+| `stationAbbr` | A map of words to abbreviations, used to shorten long station names so they fit on a small screen, e.g. `{ "International": "Intl." }`. |
+
+### Real Time Trains API settings (`rttApi`) — used by default
+
+| Key | Description |
+|---|---|
+| `username` | Your Real Time Trains username. |
+| `password` | Your Real Time Trains password. |
+| `operatingHours` | The hour range (e.g. `"6-23"`) during which the board actively requests train times. The free tier allows 1000 calls a day. |
+
+### Transport API settings (`transportApi`) — legacy, avoid
+
+Kept for backwards compatibility. Transport API's free tier now allows just 30 calls a day, which isn't enough to run this in any meaningful way — you'd need a commercial agreement. Stick with `rttApi` unless you have a good reason not to.
+
+### Choosing the API (`apiMethod`)
+
+Set to `"rtt"` (the default) to use Real Time Trains, or `"transport"` to fall back to the legacy Transport API.
+
+### Reliability settings (optional)
+
+| Key | Description |
+|---|---|
+| `retryBackoffSeconds` | If a refresh fails (network blip, API hiccup), the board keeps showing the last good data and retries after these delays in turn — e.g. `[10, 30, 60]` retries after 10s, then 30s, then 60s. Once exhausted, it falls back to trying again every `refreshTime` seconds. Defaults to `[10, 30, 60]`. |
+| `staleAfterSeconds` | If no refresh has succeeded for this long, a small `!` appears next to the clock so you know you're looking at old data rather than live times. Defaults to `refreshTime * 2`. |
+
+### Display settings (optional)
+
+`display.dimming` dims the panel outside chosen hours — handy if it lives in a bedroom or hallway — independently of `operatingHours`:
 
 ```javascript
 "display": {
@@ -129,44 +211,58 @@ Copy `config.sample.json` to `config.json` and complete.
 }
 ```
 
-`enabled` - turn the dimming schedule on/off.
+| Key | Description |
+|---|---|
+| `enabled` | Turns the dimming schedule on/off. |
+| `startHour` / `endHour` | The hour range (0-23) during which the panel dims. Wraps midnight, so `22` to `6` dims overnight. |
+| `brightness` | Contrast level (0-255) used during the dim window. |
+| `normalBrightness` | Contrast level (0-255) used outside the dim window. Defaults to `255`. |
 
-`startHour` / `endHour` - the hour range (0-23) during which the panel is dimmed; wraps midnight, so `22` to `6` dims overnight.
+Not every display backend supports hardware contrast control (e.g. the desktop emulator) — on those, dimming is silently a no-op.
 
-`brightness` - contrast level (0-255) to use during the dim window.
+## Running the desktop emulator
 
-`normalBrightness` - contrast level (0-255) to use outside the dim window, defaults to `255`.
+Don't have a Pi or a screen handy? You can preview the board on your own machine without any hardware, using `luma.emulator`.
 
-Not every display backend supports hardware contrast control (e.g. the desktop emulator); on those, dimming is silently a no-op.
-
-## Running
-
-There is an example run.sh script in the root directory that will start the application and attempt to talk to a SSD1322 display via SPI. 
-You will need to adjust this to suit your own requirements
-
-For example 
-
-Change the `--display` flag to alter the output mechanism (a list of options can be found in this README: https://github.com/rm-hull/luma.examples). Use `capture` to save to images, and `pygame` to run a visual emulator.
-
-Pass `--interface spi` if you are using SPI to communicate with your screen. Otherwise, the default of `i2c` should suffice.
+> `pygame` may not have a prebuilt wheel for the very latest Python release yet, in which case `pip` builds it from source. That requires SDL2's dev headers (plus `SDL2_image`/`SDL2_ttf`/`SDL2_mixer` for the emulator's on-screen assets to load) — e.g. on macOS: `brew install sdl2 sdl2_image sdl2_mixer sdl2_ttf`. Without them, the build still succeeds but silently lacks PNG support, which breaks the emulator window (`pygame.error: File is not a Windows BMP file`). This only affects the desktop emulator — real hardware over SPI doesn't use `pygame` at all.
 
 ```bash
-$ python ./src/main.py --display ssd1322 --width 256 --height 64 --interface spi
+python3 ./src/main.py --display pygame --width 256 --height 64
 ```
 
-## Example Output
+Or write frames out to image files instead of opening a window:
 
-### Normal Operating Hours
-![](normal.gif)
-### Out Of Hours / No Trains
-![](outofhours.gif)
+```bash
+python3 ./src/main.py --display capture --width 256 --height 64
+```
 
-## Video demo
+A full list of `--display` options lives in the [luma.examples README](https://github.com/rm-hull/luma.examples). Pass `--interface spi` when talking to real hardware over SPI (the default interface is `i2c`).
 
-Chris Hutchinson tweeted a video demo of the original software running on a real device: https://twitter.com/chrishutchinson/status/1136743837244768257 I will update this with a video of the modified version at some point in the future.
+Note that all of these commands must be run from the repo root, since `config.json` is opened by relative path.
 
-## Thanks
+## Troubleshooting
 
-A big thanks to Chris Hutchinson who originally built this code! He can be found on GitHub at https://github.com/chrishutchinson/
+- **Nothing appears on screen** — double check your wiring against the pinout diagrams above, and confirm SPI is enabled (`sudo raspi-config`).
+- **`Please ensure the 'outOfHoursName' environment variable is set`** — despite the wording, this means `journey.outOfHoursName` is missing from `config.json`. Set it to whatever text you'd like shown outside operating hours.
+- **The board just stops after a while** — check `sudo journalctl -u traindep.service -f` if running as a service, or your terminal output otherwise. A handful of failed refreshes are tolerated and retried automatically; a persistent API or network failure will eventually surface an error.
+- **Emulator window won't open / BMP errors** — see the SDL2 note under [Running the desktop emulator](#running-the-desktop-emulator).
 
-The fonts used were painstakingly put together by `DanielHartUK` and can be found on GitHub at https://github.com/DanielHartUK/Dot-Matrix-Typeface - A huge thanks for making that resource available!
+## 3D printed case
+
+Fancy housing your board properly? `3d-printed-case/` has the OpenSCAD source and ready-to-print STL files for a case.
+
+![3D printed case preview](assets/train-display-open-scad.png)
+
+## Credits
+
+This project was originally built by [Chris Hutchinson](https://github.com/chrishutchinson/) — [he posted a video demo](https://twitter.com/chrishutchinson/status/1136743837244768257) of it running on real hardware, well worth a watch.
+
+The move to the Real Time Trains API, and the reliability/display improvements it's built on, came from [ghostseven](https://github.com/ghostseven/UK-Train-Departure-Display).
+
+The dot-matrix fonts are the work of [`DanielHartUK`](https://github.com/DanielHartUK/Dot-Matrix-Typeface) — thank you for making that resource available!
+
+### Example: out of hours / no services
+
+![Out of hours](assets/outofhours.gif)
+
+Enjoy your new departure board — may your trains always be "On time" and never "Cancelled". 🚉
