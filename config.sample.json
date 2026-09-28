@@ -8,6 +8,7 @@
     }
   },
   "refreshTime": 180,
+  "retryBackoffSeconds": [10, 30, 60],
   "transportApi": {
     "appId": "",
     "apiKey": "",
@@ -18,5 +19,14 @@
       "password": "",
       "operatingHours": "6-23"
     },
-    "apiMethod": "rtt"    
+    "apiMethod": "rtt",
+    "display": {
+      "dimming": {
+        "enabled": false,
+        "startHour": 22,
+        "endHour": 6,
+        "brightness": 10,
+        "normalBrightness": 255
+      }
+    }
 }

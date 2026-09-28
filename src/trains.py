@@ -57,9 +57,16 @@ def loadDeparturesForStationRTT(journeyConfig, username, password):
         except KeyError:
             platform = None
 
-        translated_departures.append({'uid': uid, 'destination_name': abbrStation(journeyConfig, destination_name), 'aimed_departure_time': aimed_departure_time, 
+        # RTT surfaces a human-readable reason under cancelReasonLongText for
+        # cancelled services and delayReasonLongText for delayed ones; prefer
+        # the cancellation reason since a cancelled service can also carry a
+        # stale delay reason. Neither is present for on-time services.
+        delay_reason = item['locationDetail'].get('cancelReasonLongText') \
+            or item['locationDetail'].get('delayReasonLongText')
+
+        translated_departures.append({'uid': uid, 'destination_name': abbrStation(journeyConfig, destination_name), 'aimed_departure_time': aimed_departure_time,
                                         'expected_departure_time': expected_departure_time,
-                                        'status': status, 'mode': mode, 'platform': platform,
+                                        'status': status, 'mode': mode, 'platform': platform, 'delay_reason': delay_reason,
                                         'time_table_url': f"https://api.rtt.io/api/v1/json/service/{uid}/{td.year}/{td.month:02}/{td.day:02}"})
 
     return translated_departures, departureStation
