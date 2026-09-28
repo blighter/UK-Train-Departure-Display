@@ -1,0 +1,10 @@
+[Unit]
+Description=Periodically check for UK Train Departure Display updates
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=30min
+Persistent=true
+
+[Install]
+WantedBy=timers.target
