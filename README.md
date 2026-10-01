@@ -1,6 +1,6 @@
 # 🚆 UK Train Departure Display
 
-A little OLED departure board for your desk, hallway, or platform-obsessed home office. It shows real UK train times, calling points, delays and cancellations, styled like the dot-matrix boards you'd see at your local station — powered by a Raspberry Pi and the [Real Time Trains API](https://www.realtimetrains.co.uk/about/developer/).
+A little OLED departure board for your desk, hallway, or platform-obsessed home office. It shows real UK train times, calling points, delays and cancellations, styled like the dot-matrix boards you'd see at your local station — powered by a Raspberry Pi and the next-generation [Real Time Trains API](https://realtimetrains.github.io/api-specification/).
 
 No excuses for missing your train now. Well, unless it's cancelled. We'll tell you that too. 🙃
 
@@ -90,7 +90,13 @@ pip3 install -r requirements.txt
 
 Sign up for a free account at the [Real Time Trains API portal](https://api-portal.rtt.io) — this gives you an API **token**, which is what actually tells your board when the next train is departing (and whether it's running late, again).
 
-> The original `api.rtt.io` username/password service is being shut down, so this board now talks to the next-generation API at `data.rtt.io`. The portal may issue you either a **long-life access token** or a **refresh token** — either goes in the same `rttApi.token` config key. The board works out which kind it has: a refresh token is automatically exchanged for short-lived access tokens, which are cached and renewed for you.
+> **Updated for the new RTT API.** The original `api.rtt.io` username/password service is deprecated and is being turned off on 31 September 2026, so this board now uses the next-generation API at `data.rtt.io` ([specification](https://realtimetrains.github.io/api-specification/)). If you're upgrading an older install, replace `rttApi.username` / `rttApi.password` in `config.json` with a single `rttApi.token`.
+>
+> The portal may issue you either a **long-life access token** or a **refresh token** — either goes in the same `rttApi.token` config key. The board works out which kind it has: a refresh token is automatically exchanged (via `/api/get_access_token`) for short-lived access tokens, which are cached and renewed for you.
+>
+> Each refresh makes up to two requests (the departures, then the calling points of the first train), and RTT rate-limits per token (per minute/hour/day/week), so don't set `refreshTime` too low. If you hit a limit the board shows "Too many requests" and retries using `retryBackoffSeconds`.
+>
+> RTT asks that tokens aren't shipped in distributable apps. That's fine here, as the token lives only in your own `config.json`, but don't publish it.
 
 </details>
 
@@ -224,7 +230,7 @@ Pushing a new commit to `origin` is now all it takes to roll it out to every boa
 | Key | Description |
 |---|---|
 | `departureStation` | The [CRS code](https://www.nationalrail.co.uk/stations_destinations/48541.aspx) for your station. |
-| `destinationStation` | Optional CRS code to only show trains heading towards a particular destination. |
+| `destinationStation` | Optional CRS code to only show trains that go on to call at a particular destination (sent to RTT as the `filterTo` parameter). |
 | `outOfHoursName` | The text shown on the blank "Welcome to..." screen outside operating hours, or when there are no services running. Required. |
 | `stationAbbr` | A map of words to abbreviations, used to shorten long station names so they fit on a small screen, e.g. `{ "International": "Intl." }`. |
 
@@ -234,6 +240,8 @@ Pushing a new commit to `origin` is now all it takes to roll it out to every boa
 |---|---|
 | `token` | Your API token from the [RTT API portal](https://api-portal.rtt.io), exactly as issued. A long-life access token is used directly; a refresh token is exchanged for a short-lived access token, which the board caches in `.rtt-token.json` (next to `config.json`) and renews automatically before it expires. |
 | `operatingHours` | The hour range (e.g. `"6-23"`) during which the board actively requests train times. |
+
+Departures come from RTT's generic `/rtt/location` endpoint (station codes are sent as `gb-nr:<CRS>`, looking 120 minutes ahead where your token allows it, otherwise the default 60) and calling points from `/rtt/service`. Trains that only pass through the station are not shown; cancelled trains are.
 
 > Tokens are sent as `Authorization: Bearer …` headers and are only read from `config.json` on your own machine — treat `config.json` and `.rtt-token.json` as secrets and keep them out of any public repo (both are gitignored). Deleting `.rtt-token.json` is always safe: the board just renews its access token on the next refresh, and pasting a new `token` into `config.json` invalidates the cached one by itself.
 
