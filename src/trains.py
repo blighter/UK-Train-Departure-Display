@@ -1,6 +1,7 @@
 import hashlib
 import json
 import os
+import re
 import time
 import requests
 
@@ -244,6 +245,10 @@ def _parseDateTime(value):
     if not value:
         return None
     text = value[:-1] + "+00:00" if value.endswith("Z") else value
+    # Python < 3.11's fromisoformat only accepts exactly 3 or 6 fractional
+    # digits; normalise to 6 so any RFC3339 fraction length parses.
+    text = re.sub(r"\.(\d+)",
+                  lambda m: "." + m.group(1)[:6].ljust(6, "0"), text, count=1)
     try:
         return datetime.fromisoformat(text)
     except ValueError:
@@ -289,14 +294,24 @@ def loadDeparturesForStationRTT(journeyConfig, auth):
     # for quieter stations to fill the board, so ask for a wider one. Widening
     # is entitlement-gated, though, so if the API rejects the window (400)
     # fall back to its default rather than failing the whole refresh.
+    params = {"code": code}
+
+    # Only show trains that go on to call at the configured destination.
+    # filterTo must use the same namespace as code.
+    destinationStation = journeyConfig.get("destinationStation")
+    if destinationStation:
+        params["filterTo"] = f"gb-nr:{destinationStation}"
+
     try:
-        data = auth.request("/rtt/location", {"code": code, "timeWindow": 120})
+        data = auth.request("/rtt/location", dict(params, timeWindow=120))
     except ApiError as err:
-        if err.status != 400:
+        # The spec says the time window "may be limited by your authorisation
+        # token", which can surface as a 400 or a 403.
+        if err.status not in (400, 403):
             raise
         print("Warning: RTT rejected the extended time window - retrying "
               "with the default 60 minutes")
-        data = auth.request("/rtt/location", {"code": code})
+        data = auth.request("/rtt/location", params)
 
     queryLocation = (data.get("query") or {}).get("location") or {}
     stationName = queryLocation.get("description") or departureStation
@@ -317,6 +332,15 @@ def loadDeparturesForStationRTT(journeyConfig, auth):
         # only shows services people can actually catch.
         if scheduleMetadata.get("inPassengerService") is False:
             continue
+
+        # The line-up also lists trains that merely pass through. displayAs
+        # is null (or PASS) for those, and CANCELLED/DIVERTED services no
+        # longer stop here - only CALL/STARTS/TERMINATES are real departures
+        # (cancelled ones are still shown, as "Cancelled").
+        displayAs = temporalData.get("displayAs")
+        if displayAs not in ("CALL", "STARTS", "TERMINATES", "CANCELLED") \
+                and not departure.get("isCancelled"):
+            continue
         locationMetadata = item.get("locationMetadata") or {}
         destinations = item.get("destination") or []
 
@@ -331,18 +355,17 @@ def loadDeparturesForStationRTT(journeyConfig, auth):
             # Without an advertised time there is nothing useful to render.
             continue
 
-        expected = _formatTime(departure.get("realtimeForecast")) \
+        # An actual time is the truth once the train has left; otherwise the
+        # forecast, then the entitlement-gated estimate for unreported trains.
+        expected = _formatTime(departure.get("realtimeActual")) \
+            or _formatTime(departure.get("realtimeForecast")) \
             or _formatTime(departure.get("realtimeEstimate")) \
-            or _formatTime(departure.get("realtimeActual")) \
             or aimed
 
-        displayAs = temporalData.get("displayAs")
         if departure.get("isCancelled"):
             status = "CANCELLED"
-        elif displayAs:
-            status = displayAs
         else:
-            status = "CALL"
+            status = displayAs
 
         modeType = (scheduleMetadata.get("modeType") or "TRAIN").upper()
         mode = "bus" if "BUS" in modeType else modeType.lower()
