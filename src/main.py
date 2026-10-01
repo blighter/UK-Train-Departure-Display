@@ -8,7 +8,9 @@ import qrcode
 from datetime import datetime
 from PIL import ImageFont, ImageDraw, Image
 from helpers import get_device
-from trains import loadDeparturesForStation, loadDestinationsForDeparture, loadDeparturesForStationRTT, loadDestinationsForDepartureRTT
+from trains import (loadDeparturesForStation, loadDestinationsForDeparture,
+                    loadDeparturesForStationRTT, loadDestinationsForDepartureRTT,
+                    getRttToken, ApiError)
 from luma.core.error import Error as DeviceError
 from luma.core.render import canvas
 from luma.core.virtual import viewport, snapshot
@@ -58,9 +60,17 @@ def validateConfig(config):
     # the same rule rather than rejecting values the app would accept.
     if config.get('apiMethod') == 'rtt':
         rttApi = config.get('rttApi', {})
-        if not rttApi.get('username') or not rttApi.get('password'):
+        if not (rttApi.get('token') or rttApi.get('refreshToken')):
+            if rttApi.get('username') or rttApi.get('password'):
+                raise ValueError(
+                    "The Real Time Trains API moved to data.rtt.io and now uses a "
+                    "token instead of a username/password. Replace "
+                    "rttApi.username/rttApi.password in config.json with "
+                    "rttApi.token (or rttApi.refreshToken). Get one at "
+                    "https://api-portal.rtt.io")
             raise ValueError(
-                "Please complete the rttApi section of your config.json file")
+                "Please complete the rttApi section of your config.json file "
+                "(set rttApi.token or rttApi.refreshToken)")
         validateOperatingHours(rttApi.get('operatingHours'), 'rttApi.operatingHours')
     else:
         transportApi = config.get('transportApi', {})
@@ -177,7 +187,8 @@ def renderServiceStatus(departure):
     def drawText(draw, width, height):
         train = ""
 
-        if departure["status"] == "CANCELLED" or departure["status"] == "CANCELLED_CALL" or departure["status"] == "CANCELLED_PASS":
+        status = departure.get("status") or ""
+        if status.startswith("CANCELLED") or status == "DIVERTED":
             train = "Cancelled"
         else:
             if isinstance(departure["expected_departure_time"], str):
@@ -192,16 +203,16 @@ def renderServiceStatus(departure):
 
 def renderPlatform(departure):
     def drawText(draw, width, height):
-        if departure["mode"] == "bus":
+        if "bus" in (departure["mode"] or ""):
             draw.text((0, 0), text="BUS", font=font, fill="yellow")
         else:
             if departure["platform"]:
                 draw.text((0, 0), text="Plat "+departure["platform"], font=font, fill="yellow")
     return drawText
 
-def renderLabel(text):
+def renderLabel(text, labelFont=None):
     def drawText(draw, width, height):
-        draw.text((0, 0), text=text, font=font, fill="yellow")
+        draw.text((0, 0), text=text, font=labelFont or font, fill="yellow")
     return drawText
 
 
@@ -287,16 +298,22 @@ def loadDataRTT(apiConfig, journeyConfig):
     if isRun(runHours[0], runHours[1]) == False:
         return False, False, journeyConfig['outOfHoursName']
 
-    departures, stationName = loadDeparturesForStationRTT(
-        journeyConfig, apiConfig["username"], apiConfig["password"])
+    token = getRttToken(apiConfig)
+
+    departures, stationName = loadDeparturesForStationRTT(journeyConfig, token)
 
     if len(departures) == 0:
         return False, False, stationName
 
-    firstDepartureDestinations = loadDestinationsForDepartureRTT(
-        journeyConfig, apiConfig["username"], apiConfig["password"], departures[0]["time_table_url"])    
+    try:
+        firstDepartureDestinations = loadDestinationsForDepartureRTT(
+            journeyConfig, token, departures[0]["uid"])
+    except (ApiError, requests.exceptions.RequestException) as err:
+        # The calling-at list is a nice-to-have second call; never lose the
+        # whole board because this one failed.
+        print(f"Warning: could not load calling points ({err})")
+        firstDepartureDestinations = []
 
-    #return False, False, journeyConfig['outOfHoursName']
     return departures, firstDepartureDestinations, stationName
 
 def fetchData(config):
@@ -405,6 +422,61 @@ def drawBlankSignage(device, width, height, departureStation):
     return virtualViewport
 
 
+def drawMessageSignage(device, width, height, title, detail):
+    # Friendly full-screen state shown while connecting, or when the API has
+    # been unreachable long enough that stale times shouldn't be trusted.
+    # The clock keeps ticking so the board never looks frozen.
+    device.clear()
+
+    measureImage = Image.new(device.mode, (width, height), "black")
+    measureDraw = ImageDraw.Draw(measureImage)
+    titleLines = wrapText(measureDraw, title, fontBold, width - 4)[:2]
+    detailLines = wrapText(measureDraw, detail, font, width - 4)
+
+    virtualViewport = viewport(device, width=width, height=height)
+
+    y = 0
+    for line in titleLines:
+        virtualViewport.add_hotspot(
+            snapshot(width, 10, renderLabel(line, fontBold), interval=10), (0, y))
+        y += 11
+
+    y += 1
+    for line in detailLines:
+        if y > 38:
+            break
+        virtualViewport.add_hotspot(
+            snapshot(width, 10, renderLabel(line, font), interval=10), (0, y))
+        y += 11
+
+    rowTime = snapshot(width, 14, renderTime, interval=1)
+    virtualViewport.add_hotspot(rowTime, (0, 50))
+
+    return virtualViewport
+
+
+def buildView(device, width, height, data):
+    if data[0] == False:
+        return drawBlankSignage(
+            device, width=width, height=height, departureStation=data[2])
+    return drawSignage(device, width=width, height=height, data=data)
+
+
+def describeError(err):
+    # Returns a (title, detail) pair short enough to read on the OLED.
+    if isinstance(err, ApiError):
+        return err.title, err.detail
+    if isinstance(err, requests.exceptions.Timeout):
+        return "No connection", "The request to Real Time Trains timed out"
+    if isinstance(err, requests.exceptions.ConnectionError):
+        return "No connection", "Check the display's network connection"
+    if isinstance(err, requests.exceptions.RequestException):
+        return "Train times unavailable", "Could not reach Real Time Trains"
+    if isinstance(err, ValueError):
+        return "Unexpected response", "Real Time Trains sent unreadable data"
+    return "Something went wrong", "The board will keep trying"
+
+
 def drawSignage(device, width, height, data):
     global stationRenderCount, pauseCount
 
@@ -507,19 +579,23 @@ try:
         drawSplashScreen(device, width=widgetWidth, height=widgetHeight, splashConfig=splashConfig)
         time.sleep(splashConfig["durationSeconds"])
 
-    data = fetchData(config)
-
-    if data[0] == False:
-        virtual = drawBlankSignage(
-            device, width=widgetWidth, height=widgetHeight, departureStation=data[2])
-    else:
-        virtual = drawSignage(device, width=widgetWidth,
-                              height=widgetHeight, data=data)
-
+    # State for the render loop. The board starts on a friendly "connecting"
+    # screen so that a failure on the very first fetch shows a message rather
+    # than ending the process.
     lastSuccessfulRefresh = time.time()
     isStale = False
+    haveData = False
+    lastData = None
+    currentError = None
+    shownError = None
     retryCount = 0
-    nextAttemptTime = time.time() + refreshTime
+    nextAttemptTime = 0
+
+    virtual = drawMessageSignage(
+        device, width=widgetWidth, height=widgetHeight,
+        title="Connecting", detail="Fetching train times...")
+    # Show the connecting screen during the first (possibly slow) fetch.
+    virtual.refresh()
 
     while True:
         now = time.time()
@@ -528,21 +604,22 @@ try:
             try:
                 data = fetchData(config)
 
-                if data[0] == False:
-                    virtual = drawBlankSignage(
-                        device, width=widgetWidth, height=widgetHeight, departureStation=data[2])
-                else:
-                    virtual = drawSignage(device, width=widgetWidth,
-                                          height=widgetHeight, data=data)
-
+                lastData = data
+                haveData = True
+                currentError = None
                 lastSuccessfulRefresh = time.time()
                 retryCount = 0
                 nextAttemptTime = time.time() + refreshTime
-            except requests.exceptions.RequestException as err:
+
+                virtual = buildView(device, widgetWidth, widgetHeight, data)
+                shownError = None
+            except Exception as err:
                 # A transient network/API failure shouldn't kill the whole
-                # process - keep showing the last good data and retry with
-                # a backoff, without blocking the render loop (the clock and
-                # scroller keep moving while we wait).
+                # process - keep showing the last good data (once it's stale,
+                # the friendly error screen takes over) and retry with a
+                # backoff, without blocking the render loop.
+                currentError = describeError(err)
+
                 if retryCount < len(retryBackoffSeconds):
                     delay = retryBackoffSeconds[retryCount]
                     retryCount += 1
@@ -558,6 +635,25 @@ try:
 
         isStale = (time.time() - lastSuccessfulRefresh) >= staleAfterSeconds
 
+        # Keep the last good board through a brief blip (the clock's "!" marks
+        # it stale), but swap to a friendly message once the outage has lasted,
+        # or if nothing has ever loaded. Comparing the message itself means a
+        # change of error (e.g. "No connection" -> "API access denied") redraws.
+        showError = currentError if (currentError is not None and
+                                     (not haveData or isStale)) else None
+        if showError != shownError:
+            if showError:
+                virtual = drawMessageSignage(
+                    device, width=widgetWidth, height=widgetHeight,
+                    title=showError[0], detail=showError[1])
+            elif haveData:
+                virtual = buildView(device, widgetWidth, widgetHeight, lastData)
+            else:
+                virtual = drawMessageSignage(
+                    device, width=widgetWidth, height=widgetHeight,
+                    title="Connecting", detail="Fetching train times...")
+            shownError = showError
+
         if dimmingConfig:
             shouldBeDimmed = isRun(dimmingConfig["startHour"], dimmingConfig["endHour"])
             if shouldBeDimmed != isDimmed:
@@ -570,10 +666,15 @@ try:
 except KeyboardInterrupt:
     pass
 except DeviceError as err:
-    print(f"Error: {err}")
-except requests.exceptions.RequestException as err:
-    print(f"Error: {err}")
+    print(f"Display error: {err}")
+    print("Could not drive the OLED display - check the wiring and that SPI is "
+          "enabled (sudo raspi-config > Interface Options > SPI).")
 except ValueError as err:
+    # A bad/missing config is fatal, and exits non-zero so systemd reports the
+    # unit as failed (rather than a clean stop) instead of leaving an
+    # unattended board frozen on its last frame with no visible signal.
     print(f"Error: {err}")
+    sys.exit(1)
 except KeyError as err:
     print(f"Error: Please ensure the {err} environment variable is set")
+    sys.exit(1)

@@ -15,8 +15,8 @@
     "operatingHours": "0-23"
   },
   "rttApi":{
-      "username": "",
-      "password": "",
+      "token": "",
+      "refreshToken": "",
       "operatingHours": "6-23"
     },
     "apiMethod": "rtt",

@@ -188,8 +188,8 @@ fields = {
     "CUR_DESTINATION": j.get("destinationStation") or "",
     "CUR_OUT_OF_HOURS": j.get("outOfHoursName") or "",
     "CUR_REFRESH": str(cfg.get("refreshTime", 180)),
-    "CUR_RTT_USERNAME": r.get("username") or "",
-    "CUR_HAS_PASSWORD": "1" if r.get("password") else "0",
+    "CUR_HAS_RTT_TOKEN": "1" if (r.get("token") or r.get("refreshToken")) else "0",
+    "CUR_RTT_IS_REFRESH": "1" if r.get("refreshToken") else "0",
     "CUR_OPERATING_HOURS": r.get("operatingHours") or "6-23",
     "CUR_DIM_ENABLED": "1" if d.get("enabled") else "0",
     "CUR_DIM_START": str(d.get("startHour", 22)),
@@ -224,9 +224,15 @@ if ! [[ "$SETUP_REFRESH" =~ ^[0-9]+$ ]] || [ "$SETUP_REFRESH" -lt 10 ]; then
 fi
 
 printf '\n'
-info "Get a free Real Time Trains API account at https://api.rtt.io if you haven't already."
-ask_required "Real Time Trains username" "$CUR_RTT_USERNAME" SETUP_RTT_USERNAME
-ask_secret "Real Time Trains password" "$CUR_HAS_PASSWORD" SETUP_RTT_PASSWORD
+info "Get an API token from the Real Time Trains portal at https://api-portal.rtt.io —"
+info "the old api.rtt.io username/password no longer works."
+ask_secret "Real Time Trains API token" "$CUR_HAS_RTT_TOKEN" SETUP_RTT_TOKEN
+RTT_REFRESH_DEFAULT="n"; [ "$CUR_RTT_IS_REFRESH" = "1" ] && RTT_REFRESH_DEFAULT="y"
+if confirm "Is that a refresh token (rather than a long-life access token)?" "$RTT_REFRESH_DEFAULT"; then
+    SETUP_RTT_IS_REFRESH=1
+else
+    SETUP_RTT_IS_REFRESH=0
+fi
 
 ask_pattern "Operating hours (24h range, e.g. 6-23)" "$CUR_OPERATING_HOURS" '^[0-9]{1,2}-[0-9]{1,2}$' \
     "That should look like 6-23 (start hour, dash, end hour)." \
@@ -247,7 +253,7 @@ else
 fi
 
 export SETUP_DEPARTURE SETUP_DESTINATION SETUP_OUT_OF_HOURS SETUP_REFRESH \
-    SETUP_RTT_USERNAME SETUP_RTT_PASSWORD SETUP_OPERATING_HOURS \
+    SETUP_RTT_TOKEN SETUP_RTT_IS_REFRESH SETUP_OPERATING_HOURS \
     SETUP_DIM_ENABLED SETUP_DIM_START SETUP_DIM_END SETUP_DIM_BRIGHTNESS
 
 python3 - <<'PY'
@@ -272,9 +278,19 @@ cfg["refreshTime"] = int(os.environ["SETUP_REFRESH"])
 cfg["apiMethod"] = "rtt"
 
 rtt = cfg.setdefault("rttApi", {})
-rtt["username"] = os.environ["SETUP_RTT_USERNAME"]
-if os.environ.get("SETUP_RTT_PASSWORD"):
-    rtt["password"] = os.environ["SETUP_RTT_PASSWORD"]
+# A blank answer means "keep the existing token" (ask_secret hides it), so
+# only touch the stored token when the user actually typed something.
+new_token = os.environ.get("SETUP_RTT_TOKEN")
+if new_token:
+    if os.environ.get("SETUP_RTT_IS_REFRESH") == "1":
+        rtt["refreshToken"] = new_token
+        rtt.pop("token", None)
+    else:
+        rtt["token"] = new_token
+        rtt.pop("refreshToken", None)
+# Drop the dead api.rtt.io credentials if a previous run left them behind.
+rtt.pop("username", None)
+rtt.pop("password", None)
 rtt["operatingHours"] = os.environ["SETUP_OPERATING_HOURS"]
 
 cfg.setdefault("transportApi", {"appId": "", "apiKey": "", "operatingHours": "0-23"})
