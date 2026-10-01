@@ -10,7 +10,7 @@ from PIL import ImageFont, ImageDraw, Image
 from helpers import get_device
 from trains import (loadDeparturesForStation, loadDestinationsForDeparture,
                     loadDeparturesForStationRTT, loadDestinationsForDepartureRTT,
-                    getRttToken, ApiError)
+                    getRttAuth, ApiError)
 from luma.core.error import Error as DeviceError
 from luma.core.render import canvas
 from luma.core.virtual import viewport, snapshot
@@ -66,11 +66,11 @@ def validateConfig(config):
                     "The Real Time Trains API moved to data.rtt.io and now uses a "
                     "token instead of a username/password. Replace "
                     "rttApi.username/rttApi.password in config.json with "
-                    "rttApi.token (or rttApi.refreshToken). Get one at "
-                    "https://api-portal.rtt.io")
+                    "rttApi.token. Get one at https://api-portal.rtt.io")
             raise ValueError(
-                "Please complete the rttApi section of your config.json file "
-                "(set rttApi.token or rttApi.refreshToken)")
+                "Please set rttApi.token in config.json - paste the API token "
+                "from https://api-portal.rtt.io (access and refresh tokens both "
+                "work; the board handles token renewal itself)")
         validateOperatingHours(rttApi.get('operatingHours'), 'rttApi.operatingHours')
     else:
         transportApi = config.get('transportApi', {})
@@ -298,16 +298,16 @@ def loadDataRTT(apiConfig, journeyConfig):
     if isRun(runHours[0], runHours[1]) == False:
         return False, False, journeyConfig['outOfHoursName']
 
-    token = getRttToken(apiConfig)
+    auth = getRttAuth(apiConfig)
 
-    departures, stationName = loadDeparturesForStationRTT(journeyConfig, token)
+    departures, stationName = loadDeparturesForStationRTT(journeyConfig, auth)
 
     if len(departures) == 0:
         return False, False, stationName
 
     try:
         firstDepartureDestinations = loadDestinationsForDepartureRTT(
-            journeyConfig, token, departures[0]["uid"])
+            journeyConfig, auth, departures[0]["uid"])
     except (ApiError, requests.exceptions.RequestException) as err:
         # The calling-at list is a nice-to-have second call; never lose the
         # whole board because this one failed.

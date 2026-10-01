@@ -16,7 +16,6 @@
   },
   "rttApi":{
       "token": "",
-      "refreshToken": "",
       "operatingHours": "6-23"
     },
     "apiMethod": "rtt",

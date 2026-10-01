@@ -189,7 +189,6 @@ fields = {
     "CUR_OUT_OF_HOURS": j.get("outOfHoursName") or "",
     "CUR_REFRESH": str(cfg.get("refreshTime", 180)),
     "CUR_HAS_RTT_TOKEN": "1" if (r.get("token") or r.get("refreshToken")) else "0",
-    "CUR_RTT_IS_REFRESH": "1" if r.get("refreshToken") else "0",
     "CUR_OPERATING_HOURS": r.get("operatingHours") or "6-23",
     "CUR_DIM_ENABLED": "1" if d.get("enabled") else "0",
     "CUR_DIM_START": str(d.get("startHour", 22)),
@@ -225,14 +224,10 @@ fi
 
 printf '\n'
 info "Get an API token from the Real Time Trains portal at https://api-portal.rtt.io —"
-info "the old api.rtt.io username/password no longer works."
+info "the old api.rtt.io username/password no longer works. Whether the portal gives"
+info "you an access or a refresh token, the board works it out and renews access"
+info "tokens itself — you never need to update this again."
 ask_secret "Real Time Trains API token" "$CUR_HAS_RTT_TOKEN" SETUP_RTT_TOKEN
-RTT_REFRESH_DEFAULT="n"; [ "$CUR_RTT_IS_REFRESH" = "1" ] && RTT_REFRESH_DEFAULT="y"
-if confirm "Is that a refresh token (rather than a long-life access token)?" "$RTT_REFRESH_DEFAULT"; then
-    SETUP_RTT_IS_REFRESH=1
-else
-    SETUP_RTT_IS_REFRESH=0
-fi
 
 ask_pattern "Operating hours (24h range, e.g. 6-23)" "$CUR_OPERATING_HOURS" '^[0-9]{1,2}-[0-9]{1,2}$' \
     "That should look like 6-23 (start hour, dash, end hour)." \
@@ -253,7 +248,7 @@ else
 fi
 
 export SETUP_DEPARTURE SETUP_DESTINATION SETUP_OUT_OF_HOURS SETUP_REFRESH \
-    SETUP_RTT_TOKEN SETUP_RTT_IS_REFRESH SETUP_OPERATING_HOURS \
+    SETUP_RTT_TOKEN SETUP_OPERATING_HOURS \
     SETUP_DIM_ENABLED SETUP_DIM_START SETUP_DIM_END SETUP_DIM_BRIGHTNESS
 
 python3 - <<'PY'
@@ -279,15 +274,18 @@ cfg["apiMethod"] = "rtt"
 
 rtt = cfg.setdefault("rttApi", {})
 # A blank answer means "keep the existing token" (ask_secret hides it), so
-# only touch the stored token when the user actually typed something.
+# only touch the stored token when the user actually typed something. The
+# credential always lives under "token" now — the app detects access vs
+# refresh itself — so migrate the older refreshToken spelling rather than
+# letting a blank answer silently drop it.
 new_token = os.environ.get("SETUP_RTT_TOKEN")
 if new_token:
-    if os.environ.get("SETUP_RTT_IS_REFRESH") == "1":
-        rtt["refreshToken"] = new_token
-        rtt.pop("token", None)
-    else:
-        rtt["token"] = new_token
-        rtt.pop("refreshToken", None)
+    rtt["token"] = new_token
+    rtt.pop("refreshToken", None)
+elif rtt.get("refreshToken") and not rtt.get("token"):
+    rtt["token"] = rtt.pop("refreshToken")
+else:
+    rtt.pop("refreshToken", None)
 # Drop the dead api.rtt.io credentials if a previous run left them behind.
 rtt.pop("username", None)
 rtt.pop("password", None)
