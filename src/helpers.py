@@ -65,7 +65,23 @@ def get_device(actual_args=None):
         # give an actionable message instead of routing it through argparse.
         raise error.DeviceNotFoundError(
             "{}. Enable SPI with 'sudo raspi-config' (Interface Options > "
-            "SPI > Yes), then reboot and try again.".format(e)
+            "SPI > Yes), then reboot and try again. If you are not on a "
+            "Raspberry Pi, use the desktop emulator instead: "
+            "python3 ./src/main.py --display pygame --width 256 --height 64".format(e)
+        ) from e
+    except ImportError as e:
+        # RPi.GPIO/spidev are Linux-only; on a laptop or Mac they simply
+        # aren't installable, which the plain traceback doesn't make obvious.
+        raise error.Error(
+            "Could not load the hardware driver ({}). RPi.GPIO and spidev are "
+            "Linux/Raspberry Pi only - for a desktop preview use "
+            "python3 ./src/main.py --display pygame --width 256 --height 64".format(e)
+        ) from e
+    except PermissionError as e:
+        raise error.Error(
+            "Permission denied accessing the display ({}). Check the wiring, "
+            "that SPI is enabled, and that your user can access /dev/spidev* "
+            "(try adding the user to the 'spi'/'gpio' groups).".format(e)
         ) from e
     except error.Error as e:
         parser.error(e)

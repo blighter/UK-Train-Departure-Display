@@ -1,6 +1,10 @@
 [Unit]
 Description=UK Train Departure Display
 After=multi-user.target
+# Stop hammering restarts (and mark the unit failed so it's visible) if the
+# app keeps failing on startup, e.g. a missing/invalid rttApi token.
+StartLimitIntervalSec=300
+StartLimitBurst=5
 
 [Service]
 Type=idle

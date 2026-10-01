@@ -28,7 +28,7 @@ No excuses for missing your train now. Well, unless it's cancelled. We'll tell y
 - A Raspberry Pi (any model with a 40-pin GPIO header and network access will do)
 - A 256x64 SSD1322 (or compatible SSD13xx) OLED display
 - Some jumper wires
-- A [Real Time Trains API](https://api.rtt.io) account (free)
+- A [Real Time Trains API](https://api-portal.rtt.io) account (free)
 - 15 minutes and a mild enthusiasm for trains
 
 </details>
@@ -88,7 +88,9 @@ pip3 install -r requirements.txt
 <details open>
 <summary><h2>3. Get API access</h2></summary>
 
-Sign up for a free account at [api.rtt.io](https://api.rtt.io) — this gives you a username and password for the Real Time Trains API, which is what actually tells your board when the next train is departing (and whether it's running late, again).
+Sign up for a free account at the [Real Time Trains API portal](https://api-portal.rtt.io) — this gives you an API **token**, which is what actually tells your board when the next train is departing (and whether it's running late, again).
+
+> The original `api.rtt.io` username/password service is being shut down, so this board now talks to the next-generation API at `data.rtt.io`. The portal may issue you either a **long-life access token** (paste it straight in) or a **refresh token** (the board exchanges it for a short-lived access token automatically). Either works — just put it in the matching config key below.
 
 </details>
 
@@ -110,8 +112,8 @@ At minimum, you need to set:
     "outOfHoursName": "Sevenoaks"    // shown on the blank screen outside operating hours
   },
   "rttApi": {
-    "username": "your-rtt-username",
-    "password": "your-rtt-password"
+    "token": "your-rtt-access-token"     // long-life access token...
+    // "refreshToken": "your-rtt-refresh-token"  // ...or a refresh token instead
   }
 }
 ```
@@ -231,9 +233,11 @@ Pushing a new commit to `origin` is now all it takes to roll it out to every boa
 
 | Key | Description |
 |---|---|
-| `username` | Your Real Time Trains username. |
-| `password` | Your Real Time Trains password. |
-| `operatingHours` | The hour range (e.g. `"6-23"`) during which the board actively requests train times. The free tier allows 1000 calls a day. |
+| `token` | A long-life access token from the [RTT API portal](https://api-portal.rtt.io). Set this **or** `refreshToken`. |
+| `refreshToken` | A refresh token. The board exchanges it for a short-lived access token automatically and re-uses it until it expires. Set this **or** `token`. |
+| `operatingHours` | The hour range (e.g. `"6-23"`) during which the board actively requests train times. |
+
+> Tokens are sent as `Authorization: Bearer …` headers and are only read from `config.json` on your own machine — treat `config.json` as a secret and keep it out of any public repo.
 
 ### Transport API settings (`transportApi`) — legacy, avoid
 
@@ -248,7 +252,9 @@ Set to `"rtt"` (the default) to use Real Time Trains, or `"transport"` to fall b
 | Key | Description |
 |---|---|
 | `retryBackoffSeconds` | If a refresh fails (network blip, API hiccup), the board keeps showing the last good data and retries after these delays in turn — e.g. `[10, 30, 60]` retries after 10s, then 30s, then 60s. Once exhausted, it falls back to trying again every `refreshTime` seconds. Defaults to `[10, 30, 60]`. |
-| `staleAfterSeconds` | If no refresh has succeeded for this long, a small `!` appears next to the clock so you know you're looking at old data rather than live times. Defaults to `refreshTime * 2`. |
+| `staleAfterSeconds` | If no refresh has succeeded for this long, a small `!` appears next to the clock so you know you're looking at old data rather than live times, and the board switches to a friendly status screen (e.g. "No connection"). Defaults to `refreshTime * 2`. |
+
+Failures never crash the board: a network outage, an expired/invalid token, an RTT rate limit or a server error is retried automatically, and the screen explains what's happening (with the clock still ticking) until good data returns.
 
 ### Display settings (optional)
 
@@ -328,8 +334,9 @@ Note that all of these commands must be run from the repo root, since `config.js
 <summary><h2>Troubleshooting</h2></summary>
 
 - **Nothing appears on screen** — double check your wiring against the pinout diagrams above, and confirm SPI is enabled (`sudo raspi-config`).
-- **`Please ensure the 'outOfHoursName' environment variable is set`** — despite the wording, this means `journey.outOfHoursName` is missing from `config.json`. Set it to whatever text you'd like shown outside operating hours.
-- **The board just stops after a while** — check `sudo journalctl -u traindep.service -f` if running as a service, or your terminal output otherwise. A handful of failed refreshes are tolerated and retried automatically; a persistent API or network failure will eventually surface an error.
+- **"Missing journey.outOfHoursName in config.json"** — set `journey.outOfHoursName` to whatever text you'd like shown outside operating hours.
+- **The board shows "No connection" or "RTT is unavailable"** — the API couldn't be reached. A handful of failed refreshes are tolerated and retried automatically (the last good board is kept, then replaced by a status screen once the data goes stale). Check the network, then `sudo journalctl -u traindep.service -f` for details.
+- **The board shows "API access denied"** — the `rttApi.token`/`refreshToken` in `config.json` is missing, expired or wrong. Get a fresh token from https://api-portal.rtt.io.
 - **Emulator window won't open / BMP errors** — see the SDL2 note under [Running the desktop emulator](#running-the-desktop-emulator).
 - **`error: externally-managed-environment` from pip** — Debian 12+ (Bookworm, the current Raspberry Pi OS) blocks `pip install` against the system Python by default (PEP 668). `scripts/setup.sh` and `scripts/update.sh` both pass `--break-system-packages` automatically when pip supports it; if you're running `pip3 install -r requirements.txt` by hand, add that flag yourself.
 
