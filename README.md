@@ -90,7 +90,7 @@ pip3 install -r requirements.txt
 
 Sign up for a free account at the [Real Time Trains API portal](https://api-portal.rtt.io) — this gives you an API **token**, which is what actually tells your board when the next train is departing (and whether it's running late, again).
 
-> The original `api.rtt.io` username/password service is being shut down, so this board now talks to the next-generation API at `data.rtt.io`. The portal may issue you either a **long-life access token** (paste it straight in) or a **refresh token** (the board exchanges it for a short-lived access token automatically). Either works — just put it in the matching config key below.
+> The original `api.rtt.io` username/password service is being shut down, so this board now talks to the next-generation API at `data.rtt.io`. The portal may issue you either a **long-life access token** or a **refresh token** — either goes in the same `rttApi.token` config key. The board works out which kind it has: a refresh token is automatically exchanged for short-lived access tokens, which are cached and renewed for you.
 
 </details>
 
@@ -112,8 +112,7 @@ At minimum, you need to set:
     "outOfHoursName": "Sevenoaks"    // shown on the blank screen outside operating hours
   },
   "rttApi": {
-    "token": "your-rtt-access-token"     // long-life access token...
-    // "refreshToken": "your-rtt-refresh-token"  // ...or a refresh token instead
+    "token": "your-rtt-api-token"    // exactly as issued by the portal
   }
 }
 ```
@@ -233,11 +232,10 @@ Pushing a new commit to `origin` is now all it takes to roll it out to every boa
 
 | Key | Description |
 |---|---|
-| `token` | A long-life access token from the [RTT API portal](https://api-portal.rtt.io). Set this **or** `refreshToken`. |
-| `refreshToken` | A refresh token. The board exchanges it for a short-lived access token automatically and re-uses it until it expires. Set this **or** `token`. |
+| `token` | Your API token from the [RTT API portal](https://api-portal.rtt.io), exactly as issued. A long-life access token is used directly; a refresh token is exchanged for a short-lived access token, which the board caches in `.rtt-token.json` (next to `config.json`) and renews automatically before it expires. |
 | `operatingHours` | The hour range (e.g. `"6-23"`) during which the board actively requests train times. |
 
-> Tokens are sent as `Authorization: Bearer …` headers and are only read from `config.json` on your own machine — treat `config.json` as a secret and keep it out of any public repo.
+> Tokens are sent as `Authorization: Bearer …` headers and are only read from `config.json` on your own machine — treat `config.json` and `.rtt-token.json` as secrets and keep them out of any public repo (both are gitignored). Deleting `.rtt-token.json` is always safe: the board just renews its access token on the next refresh, and pasting a new `token` into `config.json` invalidates the cached one by itself.
 
 ### Transport API settings (`transportApi`) — legacy, avoid
 
@@ -336,7 +334,7 @@ Note that all of these commands must be run from the repo root, since `config.js
 - **Nothing appears on screen** — double check your wiring against the pinout diagrams above, and confirm SPI is enabled (`sudo raspi-config`).
 - **"Missing journey.outOfHoursName in config.json"** — set `journey.outOfHoursName` to whatever text you'd like shown outside operating hours.
 - **The board shows "No connection" or "RTT is unavailable"** — the API couldn't be reached. A handful of failed refreshes are tolerated and retried automatically (the last good board is kept, then replaced by a status screen once the data goes stale). Check the network, then `sudo journalctl -u traindep.service -f` for details.
-- **The board shows "API access denied"** — the `rttApi.token`/`refreshToken` in `config.json` is missing, expired or wrong. Get a fresh token from https://api-portal.rtt.io.
+- **The board shows "API access denied"** — the `rttApi.token` in `config.json` is missing, expired or wrong. Paste a fresh token from https://api-portal.rtt.io (access and refresh tokens both work).
 - **Emulator window won't open / BMP errors** — see the SDL2 note under [Running the desktop emulator](#running-the-desktop-emulator).
 - **`error: externally-managed-environment` from pip** — Debian 12+ (Bookworm, the current Raspberry Pi OS) blocks `pip install` against the system Python by default (PEP 668). `scripts/setup.sh` and `scripts/update.sh` both pass `--break-system-packages` automatically when pip supports it; if you're running `pip3 install -r requirements.txt` by hand, add that flag yourself.
 

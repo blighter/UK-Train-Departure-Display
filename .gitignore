@@ -1,6 +1,7 @@
 venv
 __pycache__
 config.json
+.rtt-token.json*
 .vscode/settings.json
 .gitignore
 *.DS_Store
