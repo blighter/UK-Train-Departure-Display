@@ -15,10 +15,13 @@ class ApiError(Exception):
     detail) is still what ends up in the logs.
     """
 
-    def __init__(self, title, detail=""):
+    def __init__(self, title, detail="", status=None):
         super().__init__(f"{title}: {detail}" if detail else title)
         self.title = title
         self.detail = detail
+        # HTTP status behind the error, when there was one; lets callers
+        # distinguish e.g. a 400 invalid query from a 5xx.
+        self.status = status
 
 
 # The next-generation Real Time Trains API. The original api.rtt.io service
@@ -55,24 +58,24 @@ def _checkResponse(response):
 
     if status == 401:
         raise ApiError("API access denied",
-                       "Check rttApi.token in config.json")
+                       "Check rttApi.token in config.json", status=status)
     if status == 403:
         # A valid token can still be entitled to less than the request needs
         # (e.g. time windows) - re-authing won't help.
         raise ApiError("API access denied",
-                       "The token isn't entitled to this request")
+                       "The token isn't entitled to this request", status=status)
     if status == 404:
         raise ApiError("Not found",
-                       "RTT could not find that station or service")
+                       "RTT could not find that station or service", status=status)
     if status == 429:
         retryAfter = response.headers.get("Retry-After")
         detail = (f"Rate limited - retry in {retryAfter}s"
                   if retryAfter else "Rate limited - retrying shortly")
-        raise ApiError("Too many requests", detail)
+        raise ApiError("Too many requests", detail, status=status)
     if status >= 500:
         raise ApiError("RTT is unavailable",
-                       "Realtime Trains is having a problem")
-    raise ApiError("Request rejected", f"RTT returned HTTP {status}")
+                       "Realtime Trains is having a problem", status=status)
+    raise ApiError("Request rejected", f"RTT returned HTTP {status}", status=status)
 
 
 def _credentialHash(credential):
@@ -277,11 +280,23 @@ def loadDeparturesForStationRTT(journeyConfig, auth):
 
     departureStation = journeyConfig["departureStation"]
 
+    # The generic location endpoint addresses locations as
+    # "<namespace>:<code>", and gb-nr is the National Rail namespace for GB
+    # stations; a bare CRS (e.g. "CRT") is rejected with HTTP 400.
+    code = f"gb-nr:{departureStation}"
+
     # The API's default lookup window is 60 minutes, which can be too narrow
-    # for quieter stations to fill the board; widen it so there are always a
-    # few services to show.
-    data = auth.request("/rtt/location",
-                        {"code": departureStation, "timeWindow": 120})
+    # for quieter stations to fill the board, so ask for a wider one. Widening
+    # is entitlement-gated, though, so if the API rejects the window (400)
+    # fall back to its default rather than failing the whole refresh.
+    try:
+        data = auth.request("/rtt/location", {"code": code, "timeWindow": 120})
+    except ApiError as err:
+        if err.status != 400:
+            raise
+        print("Warning: RTT rejected the extended time window - retrying "
+              "with the default 60 minutes")
+        data = auth.request("/rtt/location", {"code": code})
 
     queryLocation = (data.get("query") or {}).get("location") or {}
     stationName = queryLocation.get("description") or departureStation
